@@ -59,6 +59,7 @@
 
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -101,6 +102,7 @@ int show_errors = 1;
 int show_cwd = 0;
 int show_env = 0;
 int show_exit = 0;
+int show_timestamp = 0;
 int show_user = 0;
 FILE *output;
 volatile sig_atomic_t quit = 0;
@@ -255,6 +257,18 @@ sigchld(int sig)
 	errno = old_errno;
 }
 
+static void print_timestamp(void)
+{
+	struct timeval tv;
+	char s[64];
+
+	if (show_timestamp) {
+		gettimeofday(&tv, NULL);
+		strftime(s, sizeof(s) - 1, "%FT%T", localtime(&tv.tv_sec));
+		fprintf(output, "%s.%03ld ", s, tv.tv_usec / 1000);
+	}
+}
+
 static void
 print_shquoted(const char *s)
 {
@@ -401,6 +415,7 @@ handle_msg(struct cn_msg *cn_hdr)
 
 		if (!flat)
 			fprintf(output, "%*s", 2*d, "");
+		print_timestamp();
 		fprintf(output, "%d", pid);
 		if (show_exit) {
 			putc('+', output);
@@ -469,6 +484,7 @@ handle_msg(struct cn_msg *cn_hdr)
 			fprintf(output, "%*s",
 			    2*pid_db[i].depth, "");
 
+		print_timestamp();
 		fprintf(output, "%d- ", pid);
 		print_shquoted(pid_db[i].cmdline);
 
@@ -523,7 +539,7 @@ main(int argc, char *argv[])
 
 	output = stdout;
 
-	while ((opt = getopt(argc, argv, "+deflo:p:qQtwu")) != -1)
+	while ((opt = getopt(argc, argv, "+deflo:p:qQtTwu")) != -1)
 		switch (opt) {
 		case 'd': show_cwd = 1; break;
 		case 'e': show_env = 1; break;
@@ -533,6 +549,7 @@ main(int argc, char *argv[])
 		case 'q': show_args = 0; break;
 		case 'Q': show_errors = 0; break;
 		case 't': show_exit = 1; break;
+		case 'T': show_timestamp = 1; break;
 		case 'o':
 			output = fopen(optarg, "w");
 			if (!output) {
@@ -547,7 +564,7 @@ main(int argc, char *argv[])
 
 	if (parent != 1 && optind != argc) {
 usage:
-		fprintf(stderr, "Usage: extrace [-deflqQtu] [-o FILE] [-p PID|CMD...]\n");
+		fprintf(stderr, "Usage: extrace [-deflqQtTu] [-o FILE] [-p PID|CMD...]\n");
 		exit(1);
 	}
 
@@ -630,7 +647,7 @@ usage:
 
 		if (cproc->what == PROC_EVENT_NONE)
 			continue;
-	
+
 		if (last_seq[cproc->cpu] &&
 		    cmsg->seq != last_seq[cproc->cpu] + 1)
 			print_runtime_error(
